@@ -1,0 +1,16 @@
+[package]
+name = "reinars"
+version = "0.1.0"
+edition = "2018"
+authors = ["Vee Satayamas <5ssgdxltv@relay.firefox.com>"]
+description = "Apertium Stream Parser written in Rust"
+homepage = "https://github.com/veer66/reinars"
+repository = "https://github.com/veer66/reinars"
+keywords = ["text", "nlp", "library"]
+license = "Apache-2.0"
+
+[dependencies]
+nom = "7"
+
+[lib]
+crate-type = ["cdylib", "rlib"]

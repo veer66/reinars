@@ -20,6 +20,7 @@ pub struct SubLU {
 #[derive(Debug, PartialEq)]
 pub enum StreamUnit {
     LexicalUnit(Vec<SubLU>),
+    Space(String),
     JoinedLexicalUnit(Vec<Vec<SubLU>>),
     Chunk(SubLU, Vec<StreamUnit>),
 }
@@ -70,12 +71,17 @@ pub fn parse_chunk(input: &str) -> IResult<&str, StreamUnit> {
     res.map(|(i, (head, children))| (i, StreamUnit::Chunk(head, children)))
 }
 
-pub fn parse_stream_unit(input: &str) -> IResult<&str, StreamUnit> {
-    alt((parse_basic_lu, parse_joined_lu, parse_chunk))(input)
+pub fn parse_space(input: &str) -> IResult<&str, StreamUnit> {
+    space1(input).map(|(i, o)| (i, StreamUnit::Space(String::from(o))))
 }
 
+pub fn parse_stream_unit(input: &str) -> IResult<&str, StreamUnit> {
+    alt((parse_space, parse_basic_lu, parse_joined_lu, parse_chunk))(input)
+}
+
+
 pub fn parse_stream(input: &str) -> IResult<&str, Vec<StreamUnit>> {
-    let mut parse = separated_list0(space1, parse_stream_unit);
+    let mut parse = many0(parse_stream_unit);
     parse(input)
 }
 
@@ -152,6 +158,7 @@ mod tests {
                         ling_form: String::from("ab"),
                         tags: vec![]
                     }]),
+                    StreamUnit::Space(String::from(" ")),
                     StreamUnit::LexicalUnit(vec![SubLU {
                         ling_form: String::from("cd"),
                         tags: vec![]
@@ -177,6 +184,33 @@ mod tests {
                         SubLU {
                             ling_form: String::from("ab"),
                             tags: vec![]
+                        },                        
+                        SubLU {
+                            ling_form: String::from("xy"),
+                            tags: vec![String::from("n")]
+                        }
+                    ]),
+                    StreamUnit::Space(String::from(" ")),
+                    StreamUnit::LexicalUnit(vec![SubLU {
+                        ling_form: String::from("cd"),
+                        tags: vec![]
+                    }])
+                ]
+            ))
+        );
+    }
+
+    #[test]
+    fn parse_basic_stream_with_tags_sans_space() {
+        assert_eq!(
+            parse_stream("^ab/xy<n>$^cd$"),
+            Ok((
+                "",
+                vec![
+                    StreamUnit::LexicalUnit(vec![
+                        SubLU {
+                            ling_form: String::from("ab"),
+                            tags: vec![]
                         },
                         SubLU {
                             ling_form: String::from("xy"),
@@ -192,6 +226,7 @@ mod tests {
         );
     }
 
+    
     #[test]
     fn parse_joined_lu_basic() {
         assert_eq!(

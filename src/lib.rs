@@ -21,7 +21,7 @@ pub struct SubLU {
 pub enum StreamUnit {
     LexicalUnit(Vec<SubLU>),
     JoinedLexicalUnit(Vec<Vec<SubLU>>),
-    Chunk(String),
+    Chunk(SubLU, Vec<StreamUnit>),
 }
 
 pub fn parse_tag(input: &str) -> IResult<&str, &str> {
@@ -63,8 +63,19 @@ pub fn parse_lu(input: &str) -> IResult<&str, StreamUnit> {
     alt((parse_basic_lu, parse_joined_lu))(input)
 }
 
+pub fn parse_chunk(input: &str) -> IResult<&str, StreamUnit> {
+    let parse_children = delimited(tag("{"), separated_list0(tag(" "), parse_lu), tag("}"));
+    let mut parse = pair(parse_sub_lu, parse_children);
+    let res = parse(input);
+    res.map(|(i, (head, children))| (i, StreamUnit::Chunk(head, children)))
+}
+
+pub fn parse_stream_unit(input: &str) -> IResult<&str, StreamUnit> {
+    alt((parse_basic_lu, parse_joined_lu, parse_chunk))(input)
+}
+
 pub fn parse_stream(input: &str) -> IResult<&str, Vec<StreamUnit>> {
-    let mut parse = separated_list0(space1, parse_lu);
+    let mut parse = separated_list0(space1, parse_stream_unit);
     parse(input)
 }
 
@@ -75,7 +86,7 @@ mod tests {
     #[test]
     fn basic_lu() {
         assert_eq!(
-            parse_lu("^กา$"),
+            parse_stream_unit("^กา$"),
             Ok((
                 "",
                 StreamUnit::LexicalUnit(vec![SubLU {
@@ -89,7 +100,7 @@ mod tests {
     #[test]
     fn lu_surface_escape() {
         assert_eq!(
-            parse_lu("^\\^ab\\$$"),
+            parse_stream_unit("^\\^ab\\$$"),
             Ok((
                 "",
                 StreamUnit::LexicalUnit(vec![SubLU {
@@ -103,7 +114,7 @@ mod tests {
     #[test]
     fn ambiguous_lu() {
         assert_eq!(
-            parse_lu("^ab/xy$"),
+            parse_stream_unit("^ab/xy$"),
             Ok((
                 "",
                 StreamUnit::LexicalUnit(vec![
@@ -184,7 +195,7 @@ mod tests {
     #[test]
     fn parse_joined_lu_basic() {
         assert_eq!(
-            parse_lu("^ab/xy<n>+tx<a>$"),
+            parse_stream_unit("^ab/xy<n>+tx<a>$"),
             Ok((
                 "",
                 StreamUnit::JoinedLexicalUnit(vec![
@@ -203,6 +214,32 @@ mod tests {
                         }
                     ],
                 ]),
+            ))
+        );
+    }
+
+    #[test]
+    fn parse_chunk() {
+        assert_eq!(
+            parse_stream_unit("N1<SN><a>{^i$ ^j$}"),
+            Ok((
+                "",
+                StreamUnit::Chunk(
+                    SubLU {
+                        ling_form: String::from("N1"),
+                        tags: vec![String::from("SN"), String::from("a")]
+                    },
+                    vec![
+                        StreamUnit::LexicalUnit(vec![SubLU {
+                            ling_form: String::from("i"),
+                            tags: vec![]
+                        }]),
+                        StreamUnit::LexicalUnit(vec![SubLU {
+                            ling_form: String::from("j"),
+                            tags: vec![]
+                        }]),
+                    ],
+                ),
             ))
         );
     }

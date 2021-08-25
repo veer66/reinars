@@ -2,7 +2,6 @@ use nom::branch::alt;
 use nom::bytes::complete::escaped_transform;
 use nom::bytes::complete::is_not;
 use nom::bytes::complete::tag;
-use nom::character::complete::char;
 use nom::character::complete::one_of;
 use nom::character::complete::space1;
 use nom::multi::many0;
@@ -33,7 +32,7 @@ pub fn parse_tag(input: &str) -> IResult<&str, &str> {
 
 pub fn parse_basic_lu(input: &str) -> IResult<&str, StreamUnit> {
     let parse_analyses = separated_list0(tag("/"), parse_sub_lu);
-    let mut parse = delimited(char('^'), parse_analyses, char('$'));
+    let mut parse = delimited(tag("^"), parse_analyses, tag("$"));
     let res = parse(input);
     res.map(|(i, o)| (i, StreamUnit::LexicalUnit(o)))
 }
@@ -56,7 +55,7 @@ pub fn parse_sub_lu(input: &str) -> IResult<&str, SubLU> {
 pub fn parse_joined_lu(input: &str) -> IResult<&str, StreamUnit> {
     let parse_sub_lus = separated_list0(tag("+"), parse_sub_lu);
     let parse_analyses = separated_list0(tag("/"), parse_sub_lus);
-    let mut parse = delimited(char('^'), parse_analyses, char('$'));
+    let mut parse = delimited(tag("^"), parse_analyses, tag("$"));
     let res = parse(input);
     res.map(|(i, o)| (i, StreamUnit::JoinedLexicalUnit(o)))
 }

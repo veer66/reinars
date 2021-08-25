@@ -21,6 +21,7 @@ pub struct SubLU {
 pub enum StreamUnit {
     LexicalUnit(Vec<SubLU>),
     Space(String),
+    Format(String),
     JoinedLexicalUnit(Vec<Vec<SubLU>>),
     Chunk(SubLU, Vec<StreamUnit>),
 }
@@ -60,15 +61,21 @@ pub fn parse_joined_lu(input: &str) -> IResult<&str, StreamUnit> {
     res.map(|(i, o)| (i, StreamUnit::JoinedLexicalUnit(o)))
 }
 
-pub fn parse_lu_or_space(input: &str) -> IResult<&str, StreamUnit> {
-    alt((parse_basic_lu, parse_joined_lu, parse_space))(input)
+pub fn parse_lu_or_space_or_format(input: &str) -> IResult<&str, StreamUnit> {
+    alt((parse_format, parse_basic_lu, parse_joined_lu, parse_space))(input)
 }
 
 pub fn parse_chunk(input: &str) -> IResult<&str, StreamUnit> {
-    let parse_children = delimited(tag("{"), many0(parse_lu_or_space), tag("}"));
+    let parse_children = delimited(tag("{"), many0(parse_lu_or_space_or_format), tag("}"));
     let mut parse = pair(parse_sub_lu, parse_children);
     let res = parse(input);
     res.map(|(i, (head, children))| (i, StreamUnit::Chunk(head, children)))
+}
+
+pub fn parse_format(input: &str) -> IResult<&str, StreamUnit> {
+    let mut parse = delimited(tag("["), is_not(r#"[]"#), tag("]"));
+    let res = parse(input);
+    res.map(|(i, o)| (i, StreamUnit::Format(String::from(o))))
 }
 
 pub fn parse_space(input: &str) -> IResult<&str, StreamUnit> {
@@ -76,9 +83,14 @@ pub fn parse_space(input: &str) -> IResult<&str, StreamUnit> {
 }
 
 pub fn parse_stream_unit(input: &str) -> IResult<&str, StreamUnit> {
-    alt((parse_space, parse_basic_lu, parse_joined_lu, parse_chunk))(input)
+    alt((
+        parse_space,
+        parse_format,
+        parse_basic_lu,
+        parse_joined_lu,
+        parse_chunk,
+    ))(input)
 }
-
 
 pub fn parse_stream(input: &str) -> IResult<&str, Vec<StreamUnit>> {
     let mut parse = many0(parse_stream_unit);
@@ -184,7 +196,7 @@ mod tests {
                         SubLU {
                             ling_form: String::from("ab"),
                             tags: vec![]
-                        },                        
+                        },
                         SubLU {
                             ling_form: String::from("xy"),
                             tags: vec![String::from("n")]
@@ -226,7 +238,34 @@ mod tests {
         );
     }
 
-    
+    #[test]
+    fn parse_basic_stream_with_tags_sans_space_with_format() {
+        assert_eq!(
+            parse_stream("[<j>]^ab/xy<n>$[</j>]^cd$"),
+            Ok((
+                "",
+                vec![
+                    StreamUnit::Format(String::from("<j>")),
+                    StreamUnit::LexicalUnit(vec![
+                        SubLU {
+                            ling_form: String::from("ab"),
+                            tags: vec![]
+                        },
+                        SubLU {
+                            ling_form: String::from("xy"),
+                            tags: vec![String::from("n")]
+                        }
+                    ]),
+                    StreamUnit::Format(String::from("</j>")),
+                    StreamUnit::LexicalUnit(vec![SubLU {
+                        ling_form: String::from("cd"),
+                        tags: vec![]
+                    }])
+                ]
+            ))
+        );
+    }
+
     #[test]
     fn parse_joined_lu_basic() {
         assert_eq!(
@@ -254,9 +293,9 @@ mod tests {
     }
 
     #[test]
-    fn parse_chunk() {
+    fn parse_chunk_with_format() {
         assert_eq!(
-            parse_stream_unit("N1<SN><a>{^i$ ^j$^k$}"),
+            parse_stream_unit("N1<SN><a>{^i$ [<o>]^j$[</o>]^k$}"),
             Ok((
                 "",
                 StreamUnit::Chunk(
@@ -270,15 +309,16 @@ mod tests {
                             tags: vec![]
                         }]),
                         StreamUnit::Space(String::from(" ")),
+                        StreamUnit::Format(String::from("<o>")),
                         StreamUnit::LexicalUnit(vec![SubLU {
                             ling_form: String::from("j"),
                             tags: vec![]
                         }]),
+                        StreamUnit::Format(String::from("</o>")),
                         StreamUnit::LexicalUnit(vec![SubLU {
                             ling_form: String::from("k"),
                             tags: vec![]
                         }]),
-
                     ],
                 ),
             ))

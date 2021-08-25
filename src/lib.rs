@@ -19,15 +19,9 @@ pub struct SubLU {
 
 #[derive(Debug, PartialEq)]
 pub enum StreamUnit {
-    LexicalUnit(Vec<Analysis>),
+    LexicalUnit(Vec<SubLU>),
     JoinedLexicalUnit(Vec<Vec<SubLU>>),
     Chunk(String),
-}
-
-#[derive(Debug, PartialEq)]
-pub struct Analysis {
-    ling_form: String,
-    tags: Vec<String>,
 }
 
 pub fn parse_tag(input: &str) -> IResult<&str, &str> {
@@ -35,23 +29,8 @@ pub fn parse_tag(input: &str) -> IResult<&str, &str> {
     parse(input)
 }
 
-pub fn parse_analysis(input: &str) -> IResult<&str, Analysis> {
-    let ling_form_inner_parse = is_not(r#"^$/<>{}\"#);
-    let ling_form_escape_parse = escaped_transform(ling_form_inner_parse, '\\', one_of("^$"));
-    let mut parse = pair(ling_form_escape_parse, many0(parse_tag));
-    parse(input).map(|(i, (ling_form, tags))| {
-        (
-            i,
-            Analysis {
-                ling_form: ling_form.to_string(),
-                tags: tags.iter().map(|tag| String::from(*tag)).collect(),
-            },
-        )
-    })
-}
-
 pub fn parse_basic_lu(input: &str) -> IResult<&str, StreamUnit> {
-    let parse_analyses = separated_list0(tag("/"), parse_analysis);
+    let parse_analyses = separated_list0(tag("/"), parse_sub_lu);
     let mut parse = delimited(char('^'), parse_analyses, char('$'));
     let res = parse(input);
     res.map(|(i, o)| (i, StreamUnit::LexicalUnit(o)))
@@ -99,7 +78,7 @@ mod tests {
             parse_lu("^กา$"),
             Ok((
                 "",
-                StreamUnit::LexicalUnit(vec![Analysis {
+                StreamUnit::LexicalUnit(vec![SubLU {
                     ling_form: String::from("กา"),
                     tags: vec![]
                 }])
@@ -113,7 +92,7 @@ mod tests {
             parse_lu("^\\^ab\\$$"),
             Ok((
                 "",
-                StreamUnit::LexicalUnit(vec![Analysis {
+                StreamUnit::LexicalUnit(vec![SubLU {
                     ling_form: String::from("^ab$"),
                     tags: vec![]
                 }])
@@ -128,11 +107,11 @@ mod tests {
             Ok((
                 "",
                 StreamUnit::LexicalUnit(vec![
-                    Analysis {
+                    SubLU {
                         ling_form: String::from("ab"),
                         tags: vec![]
                     },
-                    Analysis {
+                    SubLU {
                         ling_form: String::from("xy"),
                         tags: vec![]
                     }
@@ -147,7 +126,7 @@ mod tests {
             parse_stream("^ab$"),
             Ok((
                 "",
-                vec![StreamUnit::LexicalUnit(vec![Analysis {
+                vec![StreamUnit::LexicalUnit(vec![SubLU {
                     ling_form: String::from("ab"),
                     tags: vec![]
                 }])]
@@ -158,11 +137,11 @@ mod tests {
             Ok((
                 "",
                 vec![
-                    StreamUnit::LexicalUnit(vec![Analysis {
+                    StreamUnit::LexicalUnit(vec![SubLU {
                         ling_form: String::from("ab"),
                         tags: vec![]
                     }]),
-                    StreamUnit::LexicalUnit(vec![Analysis {
+                    StreamUnit::LexicalUnit(vec![SubLU {
                         ling_form: String::from("cd"),
                         tags: vec![]
                     }])
@@ -184,16 +163,16 @@ mod tests {
                 "",
                 vec![
                     StreamUnit::LexicalUnit(vec![
-                        Analysis {
+                        SubLU {
                             ling_form: String::from("ab"),
                             tags: vec![]
                         },
-                        Analysis {
+                        SubLU {
                             ling_form: String::from("xy"),
                             tags: vec![String::from("n")]
                         }
                     ]),
-                    StreamUnit::LexicalUnit(vec![Analysis {
+                    StreamUnit::LexicalUnit(vec![SubLU {
                         ling_form: String::from("cd"),
                         tags: vec![]
                     }])

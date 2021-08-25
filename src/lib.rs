@@ -4,8 +4,10 @@ use nom::bytes::complete::tag;
 use nom::character::complete::char;
 use nom::character::complete::one_of;
 use nom::character::complete::space1;
+use nom::multi::many0;
 use nom::multi::separated_list0;
 use nom::sequence::delimited;
+use nom::sequence::pair;
 use nom::IResult;
 
 #[derive(Debug, PartialEq)]
@@ -20,15 +22,21 @@ pub struct Analysis {
     tags: Vec<String>,
 }
 
+pub fn parse_tag(input: &str) -> IResult<&str, &str> {
+    let mut parse = delimited(tag("<"), is_not(r#"<>"#), tag(">"));
+    parse(input)
+}
+
 pub fn parse_analysis(input: &str) -> IResult<&str, Analysis> {
-    let lemma_inner_parse = is_not(r#"^$/<>{}\"#);
-    let mut lemma_escape_parse = escaped_transform(lemma_inner_parse, '\\', one_of("^$"));
-    lemma_escape_parse(input).map(|(i, o)| {
+    let ling_form_inner_parse = is_not(r#"^$/<>{}\"#);
+    let ling_form_escape_parse = escaped_transform(ling_form_inner_parse, '\\', one_of("^$"));
+    let mut parse = pair(ling_form_escape_parse, many0(parse_tag));
+    parse(input).map(|(i, (ling_form, tags))| {
         (
             i,
             Analysis {
-                ling_form: o.to_string(),
-                tags: vec![],
+                ling_form: ling_form.to_string(),
+                tags: tags.iter().map(|tag| String::from(*tag)).collect(),
             },
         )
     })
@@ -119,6 +127,37 @@ mod tests {
                         ling_form: String::from("ab"),
                         tags: vec![]
                     }]),
+                    StreamUnit::LexicalUnit(vec![Analysis {
+                        ling_form: String::from("cd"),
+                        tags: vec![]
+                    }])
+                ]
+            ))
+        );
+    }
+
+    #[test]
+    fn parse_basic_tag() {
+        assert_eq!(parse_tag("<n>"), Ok(("", "n")));
+    }
+
+    #[test]
+    fn parse_basic_stream_with_tags() {
+        assert_eq!(
+            parse_stream("^ab/xy<n>$ ^cd$"),
+            Ok((
+                "",
+                vec![
+                    StreamUnit::LexicalUnit(vec![
+                        Analysis {
+                            ling_form: String::from("ab"),
+                            tags: vec![]
+                        },
+                        Analysis {
+                            ling_form: String::from("xy"),
+                            tags: vec![String::from("n")]
+                        }
+                    ]),
                     StreamUnit::LexicalUnit(vec![Analysis {
                         ling_form: String::from("cd"),
                         tags: vec![]

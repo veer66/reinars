@@ -47,6 +47,15 @@ pub fn parse_basic_lu(input: &str) -> IResult<&str, StreamUnit> {
     res.map(|(i, o)| (i, StreamUnit::LexicalUnit(o)))
 }
 
+pub fn make_flag(s: &str) -> Flag {
+    match s {
+        "*" => Flag::Unanalyzed,
+        "@" => Flag::Untranslated,
+        "#" => Flag::UnableToGenerateOrStartOfInvariablePart,
+        _ => Flag::Nothing,
+    }
+}
+
 pub fn parse_sub_lu_basic(input: &str) -> IResult<&str, SubLU> {
     let ling_form_inner_parse = is_not(r#"^$@*/<>{}\[]"#);
     let ling_form_escape_parse =
@@ -62,12 +71,7 @@ pub fn parse_sub_lu_basic(input: &str) -> IResult<&str, SubLU> {
             SubLU {
                 ling_form: ling_form.to_string(),
                 tags: tags.iter().map(|tag| String::from(*tag)).collect(),
-                flag: match flag {
-                    "*" => Flag::Unanalyzed,
-                    "@" => Flag::Untranslated,
-                    "#" => Flag::UnableToGenerateOrStartOfInvariablePart,
-                    _ => Flag::Nothing,
-                },
+                flag: make_flag(flag),
             },
         )
     })
@@ -84,12 +88,7 @@ pub fn parse_sub_lu_without_ling_form(input: &str) -> IResult<&str, SubLU> {
             SubLU {
                 ling_form: String::from(""),
                 tags: tags.iter().map(|tag| String::from(*tag)).collect(),
-                flag: match flag {
-                    "*" => Flag::Unanalyzed,
-                    "@" => Flag::Untranslated,
-                    "#" => Flag::UnableToGenerateOrStartOfInvariablePart,
-                    _ => Flag::Nothing,
-                },
+                flag: make_flag(flag),
             },
         )
     })

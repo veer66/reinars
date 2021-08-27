@@ -1,7 +1,7 @@
 # rainars
 
-Apertium Stream Parser
+[Apertium Stream](https://wiki.apertium.org/wiki/Apertium_stream_format) Parser
 
 ## Status
 
-Not usable yet
+WIP

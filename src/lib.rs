@@ -8,11 +8,21 @@ use nom::multi::many0;
 use nom::multi::separated_list0;
 use nom::sequence::delimited;
 use nom::sequence::pair;
+use nom::sequence::tuple;
 use nom::IResult;
+
+#[derive(Debug, PartialEq)]
+pub enum Flag {
+    Nothing,
+    Unanalyzed,
+    Untranslated,
+    UnableToGenerateOrStartOfInvariablePart,
+}
 
 #[derive(Debug, PartialEq)]
 pub struct SubLU {
     ling_form: String,
+    flag: Flag,
     tags: Vec<String>,
 }
 
@@ -37,19 +47,56 @@ pub fn parse_basic_lu(input: &str) -> IResult<&str, StreamUnit> {
     res.map(|(i, o)| (i, StreamUnit::LexicalUnit(o)))
 }
 
-pub fn parse_sub_lu(input: &str) -> IResult<&str, SubLU> {
-    let ling_form_inner_parse = is_not(r#"^$/<>{}\"#);
-    let ling_form_escape_parse = escaped_transform(ling_form_inner_parse, '\\', one_of("^$"));
-    let mut parse = pair(ling_form_escape_parse, many0(parse_tag));
-    parse(input).map(|(i, (ling_form, tags))| {
+pub fn parse_sub_lu_basic(input: &str) -> IResult<&str, SubLU> {
+    let ling_form_inner_parse = is_not(r#"^$@*/<>{}\[]"#);
+    let ling_form_escape_parse =
+        escaped_transform(ling_form_inner_parse, '\\', one_of(r#"^$@*/<>{}\[]"#));
+    let mut parse = tuple((
+        alt((tag("*"), tag("#"), tag("@"), tag(""))),
+        ling_form_escape_parse,
+        many0(parse_tag),
+    ));
+    parse(input).map(|(i, (flag, ling_form, tags))| {
         (
             i,
             SubLU {
                 ling_form: ling_form.to_string(),
                 tags: tags.iter().map(|tag| String::from(*tag)).collect(),
+                flag: match flag {
+                    "*" => Flag::Unanalyzed,
+                    "@" => Flag::Untranslated,
+                    "#" => Flag::UnableToGenerateOrStartOfInvariablePart,
+                    _ => Flag::Nothing,
+                },
             },
         )
     })
+}
+
+pub fn parse_sub_lu_without_ling_form(input: &str) -> IResult<&str, SubLU> {
+    let mut parse = tuple((
+        alt((tag("*"), tag("#"), tag("@"), tag(""))),
+        many0(parse_tag),
+    ));
+    parse(input).map(|(i, (flag, tags))| {
+        (
+            i,
+            SubLU {
+                ling_form: String::from(""),
+                tags: tags.iter().map(|tag| String::from(*tag)).collect(),
+                flag: match flag {
+                    "*" => Flag::Unanalyzed,
+                    "@" => Flag::Untranslated,
+                    "#" => Flag::UnableToGenerateOrStartOfInvariablePart,
+                    _ => Flag::Nothing,
+                },
+            },
+        )
+    })
+}
+
+pub fn parse_sub_lu(input: &str) -> IResult<&str, SubLU> {
+    alt((parse_sub_lu_basic, parse_sub_lu_without_ling_form))(input)
 }
 
 pub fn parse_joined_lu(input: &str) -> IResult<&str, StreamUnit> {
@@ -78,7 +125,7 @@ pub fn parse_format(input: &str) -> IResult<&str, StreamUnit> {
 }
 
 pub fn parse_space(input: &str) -> IResult<&str, StreamUnit> {
-    space1(input).map(|(i, o)| (i, StreamUnit::Space(String::from(o))))
+    alt((space1, tag("\n")))(input).map(|(i, o)| (i, StreamUnit::Space(String::from(o))))
 }
 
 pub fn parse_stream_unit(input: &str) -> IResult<&str, StreamUnit> {
@@ -99,6 +146,7 @@ pub fn parse_stream(input: &str) -> IResult<&str, Vec<StreamUnit>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use slurp;
 
     #[test]
     fn basic_lu() {
@@ -108,7 +156,8 @@ mod tests {
                 "",
                 StreamUnit::LexicalUnit(vec![SubLU {
                     ling_form: String::from("กา"),
-                    tags: vec![]
+                    tags: vec![],
+                    flag: Flag::Nothing,
                 }])
             ))
         );
@@ -122,7 +171,8 @@ mod tests {
                 "",
                 StreamUnit::LexicalUnit(vec![SubLU {
                     ling_form: String::from("^ab$"),
-                    tags: vec![]
+                    tags: vec![],
+                    flag: Flag::Nothing,
                 }])
             ))
         );
@@ -137,11 +187,13 @@ mod tests {
                 StreamUnit::LexicalUnit(vec![
                     SubLU {
                         ling_form: String::from("ab"),
-                        tags: vec![]
+                        tags: vec![],
+                        flag: Flag::Nothing,
                     },
                     SubLU {
                         ling_form: String::from("xy"),
-                        tags: vec![]
+                        tags: vec![],
+                        flag: Flag::Nothing,
                     }
                 ])
             ))
@@ -156,7 +208,8 @@ mod tests {
                 "",
                 vec![StreamUnit::LexicalUnit(vec![SubLU {
                     ling_form: String::from("ab"),
-                    tags: vec![]
+                    tags: vec![],
+                    flag: Flag::Nothing,
                 }])]
             ))
         );
@@ -167,12 +220,14 @@ mod tests {
                 vec![
                     StreamUnit::LexicalUnit(vec![SubLU {
                         ling_form: String::from("ab"),
-                        tags: vec![]
+                        tags: vec![],
+                        flag: Flag::Nothing,
                     }]),
                     StreamUnit::Space(String::from(" ")),
                     StreamUnit::LexicalUnit(vec![SubLU {
                         ling_form: String::from("cd"),
-                        tags: vec![]
+                        tags: vec![],
+                        flag: Flag::Nothing,
                     }])
                 ]
             ))
@@ -194,17 +249,20 @@ mod tests {
                     StreamUnit::LexicalUnit(vec![
                         SubLU {
                             ling_form: String::from("ab"),
-                            tags: vec![]
+                            tags: vec![],
+                            flag: Flag::Nothing,
                         },
                         SubLU {
                             ling_form: String::from("xy"),
-                            tags: vec![String::from("n")]
+                            tags: vec![String::from("n")],
+                            flag: Flag::Nothing,
                         }
                     ]),
                     StreamUnit::Space(String::from(" ")),
                     StreamUnit::LexicalUnit(vec![SubLU {
                         ling_form: String::from("cd"),
-                        tags: vec![]
+                        tags: vec![],
+                        flag: Flag::Nothing,
                     }])
                 ]
             ))
@@ -221,16 +279,19 @@ mod tests {
                     StreamUnit::LexicalUnit(vec![
                         SubLU {
                             ling_form: String::from("ab"),
-                            tags: vec![]
+                            tags: vec![],
+                            flag: Flag::Nothing,
                         },
                         SubLU {
                             ling_form: String::from("xy"),
-                            tags: vec![String::from("n")]
+                            tags: vec![String::from("n")],
+                            flag: Flag::Nothing,
                         }
                     ]),
                     StreamUnit::LexicalUnit(vec![SubLU {
                         ling_form: String::from("cd"),
-                        tags: vec![]
+                        tags: vec![],
+                        flag: Flag::Nothing,
                     }])
                 ]
             ))
@@ -248,17 +309,20 @@ mod tests {
                     StreamUnit::LexicalUnit(vec![
                         SubLU {
                             ling_form: String::from("ab"),
-                            tags: vec![]
+                            tags: vec![],
+                            flag: Flag::Nothing,
                         },
                         SubLU {
                             ling_form: String::from("xy"),
-                            tags: vec![String::from("n")]
+                            tags: vec![String::from("n")],
+                            flag: Flag::Nothing,
                         }
                     ]),
                     StreamUnit::Format(String::from("</j>")),
                     StreamUnit::LexicalUnit(vec![SubLU {
                         ling_form: String::from("cd"),
-                        tags: vec![]
+                        tags: vec![],
+                        flag: Flag::Nothing,
                     }])
                 ]
             ))
@@ -274,16 +338,19 @@ mod tests {
                 StreamUnit::JoinedLexicalUnit(vec![
                     vec![SubLU {
                         ling_form: String::from("ab"),
-                        tags: vec![]
+                        tags: vec![],
+                        flag: Flag::Nothing,
                     }],
                     vec![
                         SubLU {
                             ling_form: String::from("xy"),
-                            tags: vec![String::from("n")]
+                            tags: vec![String::from("n")],
+                            flag: Flag::Nothing,
                         },
                         SubLU {
                             ling_form: String::from("tx"),
-                            tags: vec![String::from("a")]
+                            tags: vec![String::from("a")],
+                            flag: Flag::Nothing,
                         }
                     ],
                 ]),
@@ -300,27 +367,93 @@ mod tests {
                 StreamUnit::Chunk(
                     SubLU {
                         ling_form: String::from("N1"),
-                        tags: vec![String::from("SN"), String::from("a")]
+                        tags: vec![String::from("SN"), String::from("a")],
+                        flag: Flag::Nothing,
                     },
                     vec![
                         StreamUnit::LexicalUnit(vec![SubLU {
                             ling_form: String::from("i"),
-                            tags: vec![]
+                            tags: vec![],
+                            flag: Flag::Nothing,
                         }]),
                         StreamUnit::Space(String::from(" ")),
                         StreamUnit::Format(String::from("<o>")),
                         StreamUnit::LexicalUnit(vec![SubLU {
                             ling_form: String::from("j"),
-                            tags: vec![]
+                            tags: vec![],
+                            flag: Flag::Nothing,
                         }]),
                         StreamUnit::Format(String::from("</o>")),
                         StreamUnit::LexicalUnit(vec![SubLU {
                             ling_form: String::from("k"),
-                            tags: vec![]
+                            tags: vec![],
+                            flag: Flag::Nothing,
                         }]),
                     ],
                 ),
             ))
+        );
+    }
+
+    #[test]
+    fn parse_escape_bracket() {
+        let raw = "^\\]<vblex><pres>$";
+        let (i, _) = parse_stream_unit(raw).unwrap();
+        assert_eq!(i.len(), 0);
+    }
+
+    #[test]
+    fn parse_at_lu() {
+        let raw = "^\\@<det><ind><sg>$";
+        let (i, _) = parse_stream_unit(raw).unwrap();
+        assert_eq!(i.len(), 0);
+    }
+
+    #[test]
+    fn parse_special_lemma() {
+        let raw = "^*t<det><ind><sg>$";
+        let (i, su) = parse_stream_unit(&raw).unwrap();
+        assert_eq!(i.len(), 0);
+        assert_eq!(
+            su,
+            StreamUnit::LexicalUnit(vec![SubLU {
+                ling_form: String::from("t"),
+                tags: vec![String::from("det"), String::from("ind"), String::from("sg")],
+                flag: Flag::Unanalyzed,
+            }])
+        )
+    }
+
+    #[test]
+    fn parse_special_lemma_only() {
+        let raw = "^*<det><ind><sg>$";
+        let (i, su) = parse_stream_unit(&raw).unwrap();
+        assert_eq!(i.len(), 0);
+        assert_eq!(
+            su,
+            StreamUnit::LexicalUnit(vec![SubLU {
+                ling_form: String::from(""),
+                tags: vec![String::from("det"), String::from("ind"), String::from("sg")],
+                flag: Flag::Unanalyzed,
+            }])
+        )
+    }
+
+    #[test]
+    fn parse_large_thai_data() {
+        let raw = slurp::read_all_to_string("test_data/i_like_a_dog_sent.apertium_stream").unwrap();
+        let (i, stream) = parse_stream(&raw).unwrap();
+        assert_eq!(i.len(), 0);
+        assert_eq!(
+            stream
+                .into_iter()
+                .filter_map(|su| match su {
+                    StreamUnit::Space(_) => None,
+                    StreamUnit::LexicalUnit(analyses) => Some(analyses[0].ling_form.clone()),
+                    _ => Some(String::from("_")),
+                })
+                .count(),
+            5
         );
     }
 }
